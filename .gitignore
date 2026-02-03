@@ -1,10 +1,11 @@
 # Python
-__pycache__/
+**/__pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
 env/
+venv/
 build/
 develop-eggs/
 dist/
@@ -22,12 +23,15 @@ wheels/
 *.egg
 
 # ML/RL
-models/
-logs/
+**/models/
+**/logs/
 cave_data.json
 cave_data.txt
 
-# C++
+# C++ Build Artifacts
+**/x64/
+**/Debug/
+**/Release/
 *.exe
 *.o
 *.obj
@@ -36,8 +40,21 @@ cave_data.txt
 *.so
 *.dll
 *.dylib
-a.exe
+*.pdb
+*.ilk
+*.aps
+*.user
+*.ncb
+*.suo
+*.sln.docstates
+*.vsimporter
+*.tlog
+*.lastbuildstate
 
 # VS Code
 .vscode/
 !.vscode/launch.json
+
+# Visual Studio local files
+.vs/
+
