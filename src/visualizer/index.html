@@ -137,7 +137,7 @@
             }
             // Fallback to fetch if needed
             try {
-                const response = await fetch('../cave_data.json');
+                const response = await fetch('../../cave_data.json');
                 const data = await response.json();
                 caveWidth = data.width;
                 caveHeight = data.height;

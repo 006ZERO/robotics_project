@@ -16,7 +16,7 @@ class CppCaveEnvironment(gym.Env):
  
     metadata = {'render_modes': ['human', 'rgb_array']}
     
-    def __init__(self, cave_generator_path="./cavetown.exe", render_mode=None):
+    def __init__(self, cave_generator_path="./src/cpp/cavetown.exe", render_mode=None):
         super().__init__()
         
         self.cave_generator_path = cave_generator_path
@@ -228,7 +228,7 @@ class CppCaveEnvironment(gym.Env):
             print("="*self.width)
             print(f"Steps: {self.steps}, Position: {self.agent_pos}")
 
-def make_env(rank, cave_gen_path="./cavetown.exe", seed=0):
+def make_env(rank, cave_gen_path="./src/cpp/cavetown.exe", seed=0):
     
     def _init():
         env = CppCaveEnvironment(cave_generator_path=cave_gen_path)
@@ -237,7 +237,7 @@ def make_env(rank, cave_gen_path="./cavetown.exe", seed=0):
         return env
     return _init
 
-def train(cave_generator_path="./cavetown.exe", 
+def train(cave_generator_path="./src/cpp/cavetown.exe", 
           total_timesteps=1_000_000,
           num_parallel_envs=4):
     
@@ -331,7 +331,7 @@ def test_model(model_path, num_episodes=5, render=True):
     
     
     env = CppCaveEnvironment(
-        cave_generator_path="./cavetown.exe",
+        cave_generator_path="./src/cpp/cavetown.exe",
         render_mode="human" if render else None
     )
     
