@@ -11,14 +11,17 @@ from datetime import datetime
 import os
 import subprocess
 import time
+from collections import deque
 
 class CppCaveEnvironment(gym.Env):
  
     metadata = {'render_modes': ['human', 'rgb_array']}
     
-    def __init__(self, cave_generator_path="./src/cpp/cavetown.exe", render_mode=None):
+    def __init__(self, env_id=0, cave_generator_path="./src/cpp/cavetown.exe", render_mode=None):
         super().__init__()
         
+        self.env_id = env_id
+        self.json_path = f"cave_data_{self.env_id}.json"
         self.cave_generator_path = cave_generator_path
         self.render_mode = render_mode
         
@@ -38,7 +41,7 @@ class CppCaveEnvironment(gym.Env):
         
         
         self.observation_space = spaces.Box(
-            low=0, high=1, shape=(10,), dtype=np.float32
+            low=-1, high=1, shape=(10,), dtype=np.float32
         )
         
         
@@ -47,13 +50,12 @@ class CppCaveEnvironment(gym.Env):
     def _generate_new_cave(self):
         try:
             if os.path.exists(self.cave_generator_path):
-                subprocess.run([self.cave_generator_path], 
+                subprocess.run([self.cave_generator_path, self.json_path], 
                              capture_output=True, 
                              timeout=5)
-                time.sleep(0.1)  
             
-            if os.path.exists('cave_data.json'):
-                with open('cave_data.json', 'r') as f:
+            if os.path.exists(self.json_path):
+                with open(self.json_path, 'r') as f:
                     data = json.load(f)
                     self.cave_grid = np.array(data['grid'])
                     self.width = data['width']
@@ -127,22 +129,47 @@ class CppCaveEnvironment(gym.Env):
         obs = np.concatenate([sensors, [dx, dy]])
         return obs.astype(np.float32)
     
+    def _is_reachable(self, start, goal):
+        queue = deque([tuple(start)])
+        visited = set([tuple(start)])
+        directions = [(0, 1), (1, 0), (0, -1), (-1, 0)]
+        while queue:
+            y, x = queue.popleft()
+            if y == goal[0] and x == goal[1]:
+                return True
+            for dy, dx in directions:
+                ny, nx = y + dy, x + dx
+                if 0 <= ny < self.height and 0 <= nx < self.width:
+                    if self.cave_grid[ny, nx] == 0 and (ny, nx) not in visited:
+                        visited.add((ny, nx))
+                        queue.append((ny, nx))
+        return False
+
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
         
         if seed is None or seed % 10 == 0:
             self._generate_new_cave()
         
-        self.agent_pos = self._find_valid_position()
-        
-        max_attempts = 100
-        for _ in range(max_attempts):
-            self.goal_pos = self._find_valid_position()
-            dist = np.linalg.norm(self.goal_pos - self.agent_pos)
-            if dist > max(self.height, self.width) * 0.3:
+        max_reset_attempts = 50
+        for _ in range(max_reset_attempts):
+            self.agent_pos = self._find_valid_position()
+            
+            max_attempts = 100
+            for _ in range(max_attempts):
+                self.goal_pos = self._find_valid_position()
+                dist = np.linalg.norm(self.goal_pos - self.agent_pos)
+                if dist > max(self.height, self.width) * 0.3 and self._is_reachable(self.agent_pos, self.goal_pos):
+                    break
+            
+            if self._is_reachable(self.agent_pos, self.goal_pos):
                 break
-        
+        else:
+            self.agent_pos = self._find_valid_position()
+            self.goal_pos = self.agent_pos
+
         self.steps = 0
+        self.min_dist_to_goal = np.linalg.norm(self.goal_pos - self.agent_pos)
         
         return self._get_obs(), {}
     
@@ -189,13 +216,14 @@ class CppCaveEnvironment(gym.Env):
             
             reward = (old_dist - new_dist) * 2.0  
             
-            
-            if new_dist < 2:
-                reward += 200  
-            elif new_dist < 5:
-                reward += 100  
-            elif new_dist < 10:
-                reward += 20   
+            if new_dist < self.min_dist_to_goal:
+                if self.min_dist_to_goal >= 2 and new_dist < 2:
+                    reward += 200
+                elif self.min_dist_to_goal >= 5 and new_dist < 5:
+                    reward += 100
+                elif self.min_dist_to_goal >= 10 and new_dist < 10:
+                    reward += 20
+                self.min_dist_to_goal = new_dist
 
         
         reward -= 0.02
@@ -231,7 +259,7 @@ class CppCaveEnvironment(gym.Env):
 def make_env(rank, cave_gen_path="./src/cpp/cavetown.exe", seed=0):
     
     def _init():
-        env = CppCaveEnvironment(cave_generator_path=cave_gen_path)
+        env = CppCaveEnvironment(env_id=rank, cave_generator_path=cave_gen_path)
         env = Monitor(env)
         env.reset(seed=seed + rank)
         return env
@@ -241,13 +269,13 @@ def train(cave_generator_path="./src/cpp/cavetown.exe",
           total_timesteps=1_000_000,
           num_parallel_envs=4):
     
-    print("🚀 Starting Aegis Training with FIXED Reward Function!")
+    print(" Starting Aegis Training with FIXED Reward Function!")
     print("="*60)
     
     if os.path.exists(cave_generator_path):
-        print(f"✅ Found cave generator: {cave_generator_path}")
+        print(f" Found cave generator: {cave_generator_path}")
     else:
-        print(f"⚠️  Cave generator not found at: {cave_generator_path}")
+        print(f"  Cave generator not found at: {cave_generator_path}")
         print("   Will use Python fallback generation")
     
     os.makedirs("models/checkpoints", exist_ok=True)
@@ -275,7 +303,7 @@ def train(cave_generator_path="./src/cpp/cavetown.exe",
     )
     
    
-    print("\n🧠 Creating PPO model with FIXED rewards...")
+    print("\n Creating PPO model with FIXED rewards...")
     model = PPO(
         "MlpPolicy",
         env,
@@ -291,8 +319,8 @@ def train(cave_generator_path="./src/cpp/cavetown.exe",
     )
     
     
-    print(f"\n🎯 Training for {total_timesteps:,} steps...")
-    print("📊 Reward changes:")
+    print(f"\nTraining for {total_timesteps:,} steps...")
+    print(" Reward changes:")
     print("   • Goal reward: 10,000+ (was 500)")
     print("   • Distance multiplier: 2.0x (was 10.0x)")
     print("   • Proximity bonuses: Up to +200 (was +20)")
@@ -315,16 +343,16 @@ def train(cave_generator_path="./src/cpp/cavetown.exe",
     model.save(model_path)
     
     print("\n" + "="*60)
-    print(f"✅ Training Complete!")
-    print(f"⏱️  Training time: {training_time/60:.1f} minutes")
-    print(f"💾 Model saved: {model_path}.zip")
+    print(f" Training Complete!")
+    print(f" Training time: {training_time/60:.1f} minutes")
+    print(f" Model saved: {model_path}.zip")
     print("="*60)
     
     return model
 
 def test_model(model_path, num_episodes=5, render=True):
     
-    print(f"\n🧪 Testing model: {model_path}")
+    print(f"\n Testing model: {model_path}")
     
     
     model = PPO.load(model_path)
@@ -345,7 +373,7 @@ def test_model(model_path, num_episodes=5, render=True):
         episode_reward = 0
         steps = 0
         
-        print(f"\n📍 Episode {episode + 1}/{num_episodes}")
+        print(f"\n Episode {episode + 1}/{num_episodes}")
         if render:
             env.render()
         
@@ -364,18 +392,18 @@ def test_model(model_path, num_episodes=5, render=True):
         
         if terminated:
             success_count += 1
-            print(f"✅ SUCCESS! Reached goal in {steps} steps")
+            print(f"SUCCESS! Reached goal in {steps} steps")
         else:
-            print(f"⏱️  Timeout after {steps} steps")
+            print(f" Timeout after {steps} steps")
         
-        print(f"📊 Episode reward: {episode_reward:.2f}")
+        print(f"Episode reward: {episode_reward:.2f}")
         
         total_rewards.append(episode_reward)
         total_steps.append(steps)
     
     
     print("\n" + "="*60)
-    print("📊 TESTING RESULTS:")
+    print(" TESTING RESULTS:")
     print(f"   Success rate: {success_count}/{num_episodes} ({success_count/num_episodes*100:.1f}%)")
     print(f"   Average reward: {np.mean(total_rewards):.2f}")
     print(f"   Average steps: {np.mean(total_steps):.1f}")
@@ -393,15 +421,15 @@ if __name__ == "__main__":
             else:
                 test_model(sys.argv[2])
         elif sys.argv[1] == "quick":
-            print("🏃 Quick training mode (100k steps)")
+            print("Quick training mode (100k steps)")
             model = train(total_timesteps=100_000, num_parallel_envs=4)
         else:
             print("Unknown command. Use: python train.py [quick|test]")
     else:
         
-        print("🏋️  Full training mode (10M steps)")
+        print("  Full training mode (10M steps)")
         print("Tip: Use 'python train.py quick' for faster testing")
         model = train(total_timesteps=10_000_000, num_parallel_envs=4)          
-        print("\n🎉 Training complete!")
+        print("\n Training complete!")
         print("To test your model, run:")
         print("python train.py test models/aegis_cave_v2_final_<timestamp>.zip")

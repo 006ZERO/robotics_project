@@ -146,21 +146,29 @@ public:
             outFile << "  ]\n";
             outFile << "}\n";
             outFile.close();
-            std::cout << "Cave grid exported to " << filename << "\n";
+            // std::cout << "Cave grid exported to " << filename << "\n";
         } else {
             std::cerr << "Unable to open file: " << filename << "\n";
         }
     }
 };
 
-int main() {
-    std::cout << "Cave Generator Test\n";
-    std::cout << "===================\n\n";
+int main(int argc, char* argv[]) {
+    std::string outputFile = "cave_data.json";
+    if (argc > 1) {
+        outputFile = argv[1];
+    } else {
+        std::cout << "Cave Generator\n";
+        std::cout << "==============\n\n";
+    }
     
     CaveGenerator cave(50, 25);
     cave.generate();
-    cave.print();
-    cave.saveToJson("cave_data.json");
+    
+    if (argc <= 1) {
+        cave.print();
+    }
+    cave.saveToJson(outputFile);
     
     return 0;
 }
